@@ -7,6 +7,7 @@ import com.wingsoft.propertyp.model.*;
 import com.wingsoft.propertyp.util.ExtraJson;
 
 import com.wingsoft.propertyp.util.JsonResponse;
+import com.wingsoft.propertyp.util.Tipos;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.domain.EntityScan;
 import org.springframework.context.annotation.Bean;
@@ -24,10 +25,10 @@ import org.springframework.web.client.RestTemplate;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.Random;
+import java.util.*;
+
+import javax.mail.*;
+import javax.mail.internet.*;
 
 @RestController
 @RequestMapping("/api")
@@ -124,6 +125,12 @@ public class ApiController {
         }
     }
 
+
+
+
+
+
+
     @RequestMapping(value = "/login", method= RequestMethod.POST)
     public ResponseEntity<JsonResponse> login(HttpServletRequest request){
         //List<User> books12;
@@ -173,6 +180,37 @@ public class ApiController {
     }
 
 
+    @RequestMapping(value = "/change_password", method= RequestMethod.POST)
+    public ResponseEntity<JsonResponse>  change_password(HttpServletRequest request ){
+        String authHeader = request.getHeader("Authorization");
+        String password = request.getParameter("password");
+        User user = null;
+        user = userDao.findByToken(authHeader);
+        if(user != null){
+            if(user.getTipo().equals("Email")){
+                String bcryptHashString = BCrypt.withDefaults().hashToString(12, password.toCharArray());
+                user.setClave(bcryptHashString);
+                userDao.save(user);
+                JsonResponse jsonResponse = new JsonResponse();
+                jsonResponse.setMensaje("Clave modificada correctamente");
+                jsonResponse.setError(true);
+                return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+            }else{
+                JsonResponse jsonResponse = new JsonResponse();
+                jsonResponse.setMensaje("El usuario es del tipo "+user.getTipo()+" por lo cual no puede cambiar clave");
+                jsonResponse.setError(true);
+                return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+            }
+        }
+        JsonResponse jsonResponse = new JsonResponse();
+        jsonResponse.setMensaje("Token invalido");
+        jsonResponse.setError(true);
+        return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+    }
+
+
+
+
 
 
     @RequestMapping(value = "/getAllProperty", method= RequestMethod.GET)
@@ -182,8 +220,8 @@ public class ApiController {
         user = userDao.findByToken(authHeader);
         if(user != null){
             System.out.println(user.getEmail());
-            Sort sort = new Sort(new Sort.Order(Sort.Direction.ASC, "direccion"));
-            Pageable pageable = new PageRequest(0, 2, sort);
+            Sort sort = new Sort(new Sort.Order(Sort.Direction.DESC, "id"));
+            Pageable pageable = new PageRequest(0, 1000, sort);
             Iterable<Propiedad> p = propiedadDao.findAll(pageable);
             List<ExtraJson> propiedads = new ArrayList<ExtraJson>();
             for(Propiedad pro : p){
@@ -193,7 +231,19 @@ public class ApiController {
                 ex.setData(pro);
                 Vendedor v = new Vendedor() ;
 
-                ex.setExtra(pro.getVendedors().get(0));
+
+                if(pro.getUsers().contains(user)){
+                    pro.setIsfavorito(true);
+                }
+
+                if(pro.getVendedors().size() >0){
+                    ex.setExtra(pro.getVendedors().get(0));
+                }else{
+                    Vendedor vendedor =new Vendedor();
+                    vendedor.setEmail("info@ppartners.cl");
+                    vendedor.setTelefono("+56 9 9842 2027");
+                    ex.setExtra(vendedor);
+                }
 
                 propiedads.add(ex);
             }
@@ -214,23 +264,109 @@ public class ApiController {
     public ResponseEntity<JsonResponse> getAllPropertySearch(HttpServletRequest request){
         String authHeader = request.getHeader("Authorization");
         String buscar =request.getHeader("buscar");
+
+        String paginator_string = request.getHeader("Paginator");
+        int paginador = Integer.parseInt(paginator_string);
+        long count_property ;
+
         User user = null;
         user = userDao.findByToken(authHeader);
         if(user != null){
             Comuna comuna = null ;
             List<Propiedad> p ;
             comuna = comunaDao.findByNombre(buscar);
-            Sort sort = new Sort(new Sort.Order(Sort.Direction.ASC, "direccion"));
-            Pageable pageable = new PageRequest(0, 2, sort);
+            String sort_string = request.getHeader("sort");
+            int sort_validador  = Integer.parseInt(sort_string);
+            Sort sort ;
+            switch(sort_validador) {
+                case 0:
+                    // code block
+                    sort = new Sort(new Sort.Order(Sort.Direction.DESC, "id"));
+                    break;
+                case 1:
+                    // code block
+                    sort = new Sort(new Sort.Order(Sort.Direction.DESC, "valor"));
+                    break;
+                case 2:
+                    // code block
+                    sort = new Sort(new Sort.Order(Sort.Direction.ASC, "valor"));
+                    break;
+                default:
+                    sort = new Sort(new Sort.Order(Sort.Direction.DESC, "id"));
+                    // code block
+            }
+            Pageable pageable = new PageRequest(paginador, 50, sort);
             if(comuna == null ){
-                p = propiedadDao.findByDireccion(buscar,pageable);
+                count_property = propiedadDao.countByDireccionAndObjetivoAndDisponible(buscar,"Venta",1);
+                p = propiedadDao.findByDireccionAndObjetivoAndDisponible(buscar,"Venta",pageable,1);
             }else{
-                p = propiedadDao.findByComuna(comuna,pageable);
+                count_property = propiedadDao.countByComunaAndObjetivoAndDisponible(comuna,"Venta",1);
+                p = propiedadDao.findByComunaAndObjetivoAndDisponible(comuna,"Venta",pageable,1);
             }
             System.out.println(user.getEmail());
             List<ExtraJson> propiedads = new ArrayList<ExtraJson>();
             for(Propiedad pro : p){
                 //pro.setVendedorJson(pro.getVendedor());
+                ExtraJson ex = new ExtraJson();
+                //System.out.println(pro.getVendedor().getNombre());
+                ex.setData(pro);
+                Vendedor v = new Vendedor() ;
+
+
+                if(pro.getUsers().contains(user)){
+                    pro.setIsfavorito(true);
+                }
+
+                if(pro.getVendedors().size() >0){
+                    ex.setExtra(pro.getVendedors().get(0));
+                }else{
+                    Vendedor vendedor =new Vendedor();
+                    vendedor.setEmail("info@ppartners.cl");
+                    vendedor.setTelefono("56944906568");
+                    ex.setExtra(vendedor);
+                }
+
+                propiedads.add(ex);
+            }
+            JsonResponse jsonResponse = new JsonResponse();
+            jsonResponse.setMensaje("data enviados");
+            jsonResponse.setData(propiedads);
+            jsonResponse.setTotal_propiedades(count_property);
+            return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+
+        }
+        JsonResponse jsonResponse = new JsonResponse();
+        jsonResponse.setMensaje("Token invalido");
+        jsonResponse.setError(true);
+        return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+    }
+
+
+    @RequestMapping(value = "/getAllPropertyVendedor", method= RequestMethod.GET)
+    public ResponseEntity<JsonResponse> getAllPropertyVendedor(HttpServletRequest request){
+        String authHeader = request.getHeader("Authorization");
+        Long buscar = Long.valueOf(request.getHeader("buscar"));
+        User user = null;
+        user = userDao.findByToken(authHeader);
+        if(user != null){
+            Comuna comuna = null ;
+            List<Propiedad> p ;
+
+            Vendedor vendedor = vendedorDao.findByCodigo(buscar);
+            List<Vendedor> vendedors = new ArrayList<Vendedor>();
+            vendedors.add(vendedor);
+            Sort sort = new Sort(new Sort.Order(Sort.Direction.DESC, "valor"));
+            Pageable pageable = new PageRequest(0, 1000, sort);
+            p = propiedadDao.findByVendedorsAndObjetivoAndDisponible(vendedors,"Venta",pageable,1);
+            System.out.println(user.getEmail());
+            List<ExtraJson> propiedads = new ArrayList<ExtraJson>();
+            for(Propiedad pro : p){
+                //pro.setVendedorJson(pro.getVendedor());
+                if(pro.getUsers().contains(user)){
+                    pro.setIsfavorito(true);
+                }
+
+
                 ExtraJson ex = new ExtraJson();
                 //System.out.println(pro.getVendedor().getNombre());
                 ex.setData(pro);
@@ -241,6 +377,88 @@ public class ApiController {
             JsonResponse jsonResponse = new JsonResponse();
             jsonResponse.setMensaje("data enviados");
             jsonResponse.setData(propiedads);
+            return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+
+        }
+        JsonResponse jsonResponse = new JsonResponse();
+        jsonResponse.setMensaje("Token invalido");
+        jsonResponse.setError(true);
+        return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+    }
+
+
+    @RequestMapping(value = "/getAllPropertyTipo", method= RequestMethod.GET)
+    public ResponseEntity<JsonResponse> getAllPropertyTipo(HttpServletRequest request){
+        String authHeader = request.getHeader("Authorization");
+        String paginator_string = request.getHeader("Paginator");
+
+        int paginador = Integer.parseInt(paginator_string);
+
+        String  buscar =request.getHeader("buscar").replace("Super","");
+
+        buscar = buscar.trim()
+                .toLowerCase();
+        System.out.println("palabra a buscar "+buscar);
+        User user = null;
+        user = userDao.findByToken(authHeader);
+        System.out.println(buscar);
+        if(user != null){
+            Comuna comuna = null ;
+            List<Propiedad> p ;
+
+            String sort_string = request.getHeader("sort");
+            int sort_validador  = Integer.parseInt(sort_string);
+            Sort sort ;
+            switch(sort_validador) {
+                case 0:
+                    // code block
+                    sort = new Sort(new Sort.Order(Sort.Direction.DESC, "id"));
+                    break;
+                case 1:
+                    // code block
+                    sort = new Sort(new Sort.Order(Sort.Direction.DESC, "valor"));
+                    break;
+                case 2:
+                    // code block
+                    sort = new Sort(new Sort.Order(Sort.Direction.ASC, "valor"));
+                    break;
+                default:
+                    sort = new Sort(new Sort.Order(Sort.Direction.DESC, "id"));
+                    // code block
+            }
+
+
+
+            Pageable pageable = new PageRequest(paginador, 50, sort);
+            long count_property = propiedadDao.countByEtiquetaContainingAndObjetivoAndDisponible(buscar,"Venta",1);
+            p = propiedadDao.findByEtiquetaContainingAndObjetivoAndDisponible(buscar,"Venta",pageable,1);
+            System.out.println(user.getEmail());
+            List<ExtraJson> propiedads = new ArrayList<ExtraJson>();
+            for(Propiedad pro : p){
+                ExtraJson ex = new ExtraJson();
+                //System.out.println(pro.getVendedor().getNombre());
+                ex.setData(pro);
+                Vendedor v = new Vendedor() ;
+                if(pro.getUsers().contains(user)){
+                    pro.setIsfavorito(true);
+                }
+
+
+                if(pro.getVendedors().size() >0){
+                    ex.setExtra(pro.getVendedors().get(0));
+                }else{
+                    Vendedor vendedor =new Vendedor();
+                    vendedor.setEmail("info@ppartners.cl");
+                    vendedor.setTelefono("56944906568");
+                    ex.setExtra(vendedor);
+                }
+
+                propiedads.add(ex);
+            }
+            JsonResponse jsonResponse = new JsonResponse();
+            jsonResponse.setMensaje("data enviados");
+            jsonResponse.setData(propiedads);
+            jsonResponse.setTotal_propiedades(count_property);
             return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
 
         }
@@ -266,10 +484,17 @@ public class ApiController {
                 //System.out.println(pro.getVendedor().getNombre());
                 ex.setData(pro);
                 Vendedor v = new Vendedor() ;
-
-                ex.setExtra(pro.getVendedors().get(0));
-
-
+                if(pro.getUsers().contains(user)){
+                    pro.setIsfavorito(true);
+                }
+                if(pro.getVendedors().size() >0){
+                    ex.setExtra(pro.getVendedors().get(0));
+                }else{
+                    Vendedor vendedor =new Vendedor();
+                    vendedor.setEmail("info@ppartners.cl");
+                    vendedor.setTelefono("56944906568");
+                    ex.setExtra(vendedor);
+                }
                 propiedads.add(ex);
             }
             JsonResponse jsonResponse = new JsonResponse();
@@ -290,9 +515,22 @@ public class ApiController {
         User user = null;
         user = userDao.findByToken(authHeader);
         if(user != null){
-            Iterable<Region> p = regionDao.findAll();
+            Sort sort = new Sort(new Sort.Order(Sort.Direction.ASC, "nombre"));
+            Pageable pageable = new PageRequest(0, 1000, sort);
+
+            Iterable<Region> p = regionDao.findAll(pageable);
             List<Region> propiedads = new ArrayList<Region>();
             for(Region pro : p){
+                List<Comuna> comunas = pro.getComunas();
+                if (comunas.size() > 0) {
+                    Collections.sort(comunas, new Comparator<Comuna>() {
+                        @Override
+                        public int compare(final Comuna object1, final Comuna object2) {
+                            return object1.getNombre().compareTo(object2.getNombre());
+                        }
+                    });
+                }
+                pro.setComunas(comunas);
                 propiedads.add(pro);
             }
             JsonResponse jsonResponse = new JsonResponse();
@@ -370,9 +608,25 @@ public class ApiController {
         User user = null;
         user = userDao.findByToken(authHeader);
         if(user != null){
-            for (Propiedad p : propiedads){
+            List<Propiedad> propiedads1 = new ArrayList<Propiedad>();
+            for(Propiedad p :propiedads){
+               // propiedads1.add(p);
+                System.out.println(p.getDescription());
+                System.out.println(p.getVendedors().get(0).getCodigo());
+                Vendedor vendedor = null;
+                vendedor = vendedorDao.findByCodigo(p.getVendedors().get(0).getCodigo());
+                if(vendedor != null){
+                    System.out.println(vendedor.getNombresucursal());
+                    List<Vendedor>vendedors = new ArrayList<Vendedor>();
+                    vendedors.add(vendedor);
+                    p.setVendedors(vendedors);
+                }else{
+                    p.setVendedors(null);
+                }
                 propiedadDao.save(p);
+
             }
+            //propiedadDao.saveAll(propiedads1);
             JsonResponse jsonResponse = new JsonResponse();
             jsonResponse.setMensaje("Propiedad creado Correctamente");
             jsonResponse.setError(false);
@@ -394,14 +648,29 @@ public class ApiController {
         long propiedad_id =  Long.parseLong(request.getParameter("propiedad_id"));
         User user = null;
         user = userDao.findByToken(authHeader);
+        System.out.println("entro" +propiedad_id);
         if(user != null){
             Optional propiedad = null ;
             propiedad = propiedadDao.findById(propiedad_id);
+            System.out.println("entro caca"+propiedad.isPresent());
             if(propiedad.isPresent()){
                 List<User> users = new ArrayList<User>();
-                users.add(user);
+
                 Propiedad p = (Propiedad) propiedad.get();
-                p.setUsers(users);
+
+
+                if(p.getUsers().contains(user)){
+                    List<User> users_new = new ArrayList<User>();
+
+                    p.getUsers().remove(user);
+                    System.out.println("entro caca dos"+propiedad.isPresent());
+
+                }else{
+                    //users.add(user);
+                    //p.setUsers(users);
+                    System.out.println("entro caca tres "+propiedad.isPresent());
+                    p.getUsers().add(user);
+                }
                 propiedadDao.save(p);
                 JsonResponse jsonResponse = new JsonResponse();
                 jsonResponse.setMensaje("Propiedad guardada Correctamente");
@@ -430,7 +699,7 @@ public class ApiController {
         User user = null;
         user = userDao.findByToken(authHeader);
         if(user != null){
-            Iterable<Notificacion> notificacionsI = notificaionDao.findAll();
+            Iterable<Notificacion> notificacionsI = notificaionDao.findByUser(user);
             List<Notificacion> notificacions =  new ArrayList<Notificacion>();
             for(Notificacion n : notificacionsI){
                 notificacions.add(n);
@@ -452,14 +721,10 @@ public class ApiController {
     public ResponseEntity<JsonResponse>  vender_property(HttpServletRequest request){
         User user = null;
         user = userDao.findByToken("gblgwduauwthuvbmmmslldazictvkhjnokxntcdz");
-        if(user != null){
             /*Iterable<Notificacion> notificacionsI = notificaionDao.findAll();
             List<Notificacion> notificacions =  new ArrayList<Notificacion>();
             for(Notificacion n : notificacionsI){
                 notificacions.add(n);
-
-
-
             }*/
             Optional notificacion_op  = vendedorDao.findById(Long.valueOf(1));
             Vendedor notificacion = (Vendedor) notificacion_op.get();
@@ -476,17 +741,13 @@ public class ApiController {
             }
             //n.setPropiedads(propiedadsd);
             //notificaionDao.save(n);
-
             JsonResponse jsonResponse = new JsonResponse();
             jsonResponse.setMensaje("data enviados");
             jsonResponse.setData(propiedadsd);
 
             return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
-        }
-        JsonResponse jsonResponse = new JsonResponse();
-        jsonResponse.setMensaje("Token invalido");
-        jsonResponse.setError(true);
-        return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+
+
 
     }
 
@@ -506,12 +767,27 @@ public class ApiController {
 
     @RequestMapping(value = "/getPropertyBuFilter", method= RequestMethod.POST)
     public ResponseEntity<JsonResponse>  getPropertyBuFilter(HttpServletRequest request , @RequestBody Filter filter){
+        String authHeader = request.getHeader("Authorization");
 
-        filterDao.save(filter);
+
+        User user = null;
+        user = userDao.findByToken(authHeader);
+        if(user != null){
+            filter.setUser(user);
+            filterDao.save(filter);
+            JsonResponse jsonResponse = new JsonResponse();
+            jsonResponse.setMensaje("data enviados");
+
+            return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+        }
         JsonResponse jsonResponse = new JsonResponse();
-        jsonResponse.setMensaje("data enviados");
-
+        jsonResponse.setMensaje("Token invalido");
+        jsonResponse.setError(true);
         return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+
+
+
+
 
        
     }
@@ -523,7 +799,7 @@ public class ApiController {
         User user = null;
         user = userDao.findByToken(authHeader);
         if(user != null){
-            Iterable<Filter> notificacionsI = filterDao.findAll();
+            Iterable<Filter> notificacionsI = filterDao.findByUser(user);
             List<Filter> notificacions =  new ArrayList<Filter>();
             for(Filter n : notificacionsI){
                 notificacions.add(n);
@@ -554,76 +830,136 @@ public class ApiController {
        return  null;
     }
 
+
+
     @RequestMapping(value = "/filter", method= RequestMethod.POST)
     public ResponseEntity<JsonResponse>   filter(HttpServletRequest request , @RequestBody Filter filter){
 
-        if(filter.getMax() == 0.0){
-            filter.setMax(1000000000000.0);
-        }
+        String authHeader = request.getHeader("Authorization");
+        String paginator_string = request.getHeader("Paginator");
+        int paginador = Integer.parseInt(paginator_string);
+        Long total_paginas ;
+        User user = null;
+        user = userDao.findByToken(authHeader);
+        if(user != null){
 
-        System.out.println(1+" "+filter.getDescription());
-        System.out.println(2+" "+filter.getMax());
-        System.out.println(3+" "+filter.getMin());
-        System.out.println(4+" "+filter.getComuna());
+            if(filter.getMax() == 0.0){
+                filter.setMax(1000000000000.0);
+            }
 
-        Sort sort = new Sort(new Sort.Order(Sort.Direction.ASC, "direccion"));
-        Pageable pageable = new PageRequest(0, 2, sort);
+            System.out.println(1+" "+filter.getDescription());
+            System.out.println(2+" "+filter.getMax());
+            System.out.println(3+" "+filter.getMin());
+            System.out.println(4+" "+filter.getComuna());
 
-        if(filter.getComuna() == 0){
-            System.out.println(4+" tipo region "+filter.getRegion());
-            Optional region_op = regionDao.findById(filter.getRegion());
-            Region region =  (Region) region_op.get();
-            List<Propiedad> p =   propiedadDao.findFilterOnlyRegion(filter.getDescription(),filter.getObjetivo(),filter.getMin(),filter.getMax(),region,pageable);
+            String sort_string = request.getHeader("sort");
+            int sort_validador  = Integer.parseInt(sort_string);
+            Sort sort ;
+            switch(sort_validador) {
+                case 0:
+                    // code block
+                    sort = new Sort(new Sort.Order(Sort.Direction.DESC, "id"));
+                    break;
+                case 1:
+                    // code block
+                    sort = new Sort(new Sort.Order(Sort.Direction.DESC, "valor"));
+                    break;
+                case 2:
+                    // code block
+                    sort = new Sort(new Sort.Order(Sort.Direction.ASC, "valor"));
+                    break;
+                default:
+                    sort = new Sort(new Sort.Order(Sort.Direction.DESC, "id"));
+                    // code block
+            }
+            Pageable pageable = new PageRequest(paginador, 50, sort);
+
+            if(filter.getComuna() == 0){
+                System.out.println(4+" tipo region "+filter.getRegion());
+                Optional region_op = regionDao.findById(filter.getRegion());
+                Region region =  (Region) region_op.get();
+                total_paginas= propiedadDao.countFilterOnlyRegion(filter.getDescription(),filter.getObjetivo(),filter.getMin(),filter.getMax(),region,filter.getTipo());
+                List<Propiedad> p =   propiedadDao.findFilterOnlyRegion(filter.getDescription(),filter.getObjetivo(),filter.getMin(),filter.getMax(),region,filter.getTipo(),pageable);
             /*System.out.println(propiedads.size());
             for (Propiedad propiedad : propiedads){
                 System.out.println(propiedad.getDireccion());
             }*/
 
-            List<ExtraJson> propiedads = new ArrayList<ExtraJson>();
-            for(Propiedad pro : p){
-                //pro.setVendedorJson(pro.getVendedor());
-                ExtraJson ex = new ExtraJson();
-                //System.out.println(pro.getVendedor().getNombre());
-                ex.setData(pro);
-                Vendedor v = new Vendedor() ;
+                List<ExtraJson> propiedads = new ArrayList<ExtraJson>();
+                for(Propiedad pro : p){
+                    //pro.setVendedorJson(pro.getVendedor());
+                    ExtraJson ex = new ExtraJson();
+                    //System.out.println(pro.getVendedor().getNombre());
+                    ex.setData(pro);
+                    Vendedor v = new Vendedor() ;
 
-                ex.setExtra(pro.getVendedors().get(0));
 
-                propiedads.add(ex);
+                    if(pro.getUsers().contains(user)){
+                        pro.setIsfavorito(true);
+                    }
+
+                    if(pro.getVendedors().size() >0){
+                        ex.setExtra(pro.getVendedors().get(0));
+                    }else{
+                        Vendedor vendedor =new Vendedor();
+                        vendedor.setEmail("info@ppartners.cl");
+                        vendedor.setTelefono("56944906568");
+                        ex.setExtra(vendedor);
+                    }
+
+                    propiedads.add(ex);
+                }
+
+                JsonResponse jsonResponse = new JsonResponse();
+                jsonResponse.setMensaje("data enviados");
+                jsonResponse.setData(propiedads);
+                jsonResponse.setTotal_propiedades(total_paginas);
+                return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+            }else{
+                System.out.println(4+" tipo comuna "+filter.getComuna());
+                total_paginas = propiedadDao.countFilter(filter.getDescription(),filter.getObjetivo(),filter.getMin(),filter.getMax(),filter.getComuna(),filter.getTipo());
+                List<Propiedad> p =   propiedadDao.findFilter(filter.getDescription(),filter.getObjetivo(),filter.getMin(),filter.getMax(),filter.getComuna(),filter.getTipo(),pageable);
+                List<ExtraJson> propiedads = new ArrayList<ExtraJson>();
+                for(Propiedad pro : p){
+                    //pro.setVendedorJson(pro.getVendedor());
+                    ExtraJson ex = new ExtraJson();
+                    //System.out.println(pro.getVendedor().getNombre());
+                    ex.setData(pro);
+                    Vendedor v = new Vendedor() ;
+
+                    if(pro.getUsers().contains(user)){
+                        pro.setIsfavorito(true);
+                    }
+
+                    if(pro.getVendedors().size() >0){
+                        ex.setExtra(pro.getVendedors().get(0));
+                    }else{
+                        Vendedor vendedor =new Vendedor();
+                        vendedor.setEmail("info@ppartners.cl");
+                        vendedor.setTelefono("56944906568");
+                        ex.setExtra(vendedor);
+                    }
+
+                    propiedads.add(ex);
+                }
+
+                JsonResponse jsonResponse = new JsonResponse();
+                jsonResponse.setMensaje("data enviados");
+                jsonResponse.setData(propiedads);
+                jsonResponse.setTotal_propiedades(total_paginas);
+                return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
             }
 
-            JsonResponse jsonResponse = new JsonResponse();
-            jsonResponse.setMensaje("data enviados");
-            jsonResponse.setData(propiedads);
-            return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
-        }else{
-            System.out.println(4+" tipo comuna "+filter.getComuna());
-            List<Propiedad> p =   propiedadDao.findFilter(filter.getDescription(),filter.getObjetivo(),filter.getMin(),filter.getMax(),filter.getComuna(),pageable);
-            List<ExtraJson> propiedads = new ArrayList<ExtraJson>();
-            for(Propiedad pro : p){
-                //pro.setVendedorJson(pro.getVendedor());
-                ExtraJson ex = new ExtraJson();
-                //System.out.println(pro.getVendedor().getNombre());
-                ex.setData(pro);
-                Vendedor v = new Vendedor() ;
 
-                ex.setExtra(pro.getVendedors().get(0));
-
-                propiedads.add(ex);
-            }
-
-            JsonResponse jsonResponse = new JsonResponse();
-            jsonResponse.setMensaje("data enviados");
-            jsonResponse.setData(propiedads);
-            return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
         }
 
 
-        /*JsonResponse jsonResponse = new JsonResponse();
-        jsonResponse.setMensaje("Errror de filtro");
+
+        JsonResponse jsonResponse = new JsonResponse();
+        jsonResponse.setMensaje("Errror de Token");
         jsonResponse.setError(false);
 
-        return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);*/
+        return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
     }
 
     @RequestMapping(value = "/user", method= RequestMethod.GET)
@@ -696,15 +1032,64 @@ public class ApiController {
     @RequestMapping(value = "/getSectores", method= RequestMethod.GET)
     public ResponseEntity<JsonResponse> get_barrio(HttpServletRequest request){
         List<String> optionl = propiedadDao.findSector();
-
-
-
         JsonResponse jsonResponse = new JsonResponse();
         jsonResponse.setMensaje("data enviados");
         jsonResponse.setData(optionl);
         return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
 
     }
+
+
+    @CrossOrigin
+    @RequestMapping(value = "/getBarrios", method= RequestMethod.GET)
+    public ResponseEntity<JsonResponse> getBarrios(HttpServletRequest request){
+        Iterable<Barrios> optionl = barriosDao.findAll();
+        List<Barrios> barrios = new ArrayList<Barrios>();
+        for (Barrios op : optionl ){
+            barrios.add(op);
+        }
+        JsonResponse jsonResponse = new JsonResponse();
+        jsonResponse.setMensaje("data enviados");
+        jsonResponse.setData(barrios);
+        return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+    }
+
+
+    @CrossOrigin
+    @RequestMapping(value = "/getBarriosIsShow", method= RequestMethod.GET)
+    public ResponseEntity<JsonResponse> getBarriosIsShow(HttpServletRequest request){
+        Iterable<Barrios> optionl = barriosDao.findByIsshow(true);
+        List<Barrios> barrios = new ArrayList<Barrios>();
+        for (Barrios op : optionl ){
+            barrios.add(op);
+        }
+
+        JsonResponse jsonResponse = new JsonResponse();
+        jsonResponse.setMensaje("data enviados");
+        jsonResponse.setData(barrios);
+        return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+    }
+
+
+    @CrossOrigin
+    @RequestMapping(value = "/createBarrio", method= RequestMethod.POST)
+    public ResponseEntity<JsonResponse> createBarrio(HttpServletRequest request, @RequestBody Barrios barrios){
+        String authHeader = request.getHeader("Authorization");
+        User user = null;
+        user = userDao.findByToken(authHeader);
+        if(user != null){
+            barriosDao.save(barrios);
+            JsonResponse jsonResponse = new JsonResponse();
+            jsonResponse.setMensaje("Propiedad creado Correctamente");
+            jsonResponse.setError(false);
+            return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+        }
+        JsonResponse jsonResponse = new JsonResponse();
+        jsonResponse.setMensaje("Token invalido");
+        jsonResponse.setError(true);
+        return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+    }
+
 
     /*
 
@@ -724,7 +1109,7 @@ public class ApiController {
         for(Vendedor v : vendedor){
             vendedors.add(v);
         }
-
+        Collections.shuffle(vendedors);
         JsonResponse jsonResponse = new JsonResponse();
         jsonResponse.setMensaje("data enviados");
         jsonResponse.setData(vendedors);
@@ -769,6 +1154,112 @@ public class ApiController {
         jsonResponse.setError(true);
         return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
     }
+
+
+
+
+    private static void sendFromGMail(String from, String pass, String[] to, String subject, String body) {
+        Properties props = System.getProperties();
+        String host = "smtp.gmail.com";
+        props.put("mail.smtp.starttls.enable", "true");
+        props.put("mail.smtp.host", host);
+        props.put("mail.smtp.user", from);
+        props.put("mail.smtp.password", pass);
+        props.put("mail.smtp.port", "587");
+        props.put("mail.smtp.auth", "true");
+
+        Session session = Session.getDefaultInstance(props);
+        MimeMessage message = new MimeMessage(session);
+
+        try {
+            message.setFrom(new InternetAddress(from));
+            InternetAddress[] toAddress = new InternetAddress[to.length];
+
+            // To get the array of addresses
+            for( int i = 0; i < to.length; i++ ) {
+                toAddress[i] = new InternetAddress(to[i]);
+            }
+
+            for( int i = 0; i < toAddress.length; i++) {
+                message.addRecipient(Message.RecipientType.TO, toAddress[i]);
+            }
+
+            message.setSubject(subject);
+            message.setText(body);
+            Transport transport = session.getTransport("smtp");
+            transport.connect(host, from, pass);
+            transport.sendMessage(message, message.getAllRecipients());
+            transport.close();
+        }
+        catch (AddressException ae) {
+            ae.printStackTrace();
+        }
+        catch (MessagingException me) {
+            me.printStackTrace();
+        }
+    }
+
+
+    @RequestMapping(value = "/getTipo", method= RequestMethod.GET)
+    public ResponseEntity<JsonResponse> getTipo(HttpServletRequest request){
+        List<String> tipos = new ArrayList<String>();
+        tipos.add("Residencial");
+        tipos.add("Comercial");
+        tipos.add("Campos");
+        tipos.add("Internacional");
+        tipos.add("Playa");
+        tipos.add("Nieve");
+        tipos.add("Super Lujo");
+
+
+
+        List<Tipos> tips = new ArrayList<Tipos>();
+        for (String s :tipos){
+            Tipos ti = new Tipos();
+            ti.setNombre(s);
+            ti.setImagen(urlImagenTipo(s));
+            tips.add(ti);
+        }
+        JsonResponse jsonResponse = new JsonResponse();
+        jsonResponse.setMensaje("data enviados");
+        jsonResponse.setData(tips);
+        return  new ResponseEntity<JsonResponse>(jsonResponse, HttpStatus.OK);
+    }
+
+
+    public String urlImagenTipo (String nombre){
+        String url_imagen = "";
+        switch (nombre) {
+            case "Residencial":
+                url_imagen = "https://s3.amazonaws.com/wingsoft-trendsmaker-dev/fotos/PP+(1).png";
+                break;
+            case "Comercial":
+                url_imagen = "https://s3.amazonaws.com/wingsoft-trendsmaker-dev/fotos/PP+(2).png";
+                break;
+            case "Campos":
+                url_imagen = "https://s3.amazonaws.com/wingsoft-trendsmaker-dev/fotos/PP+(3).png";
+                break;
+            case "Internacional":
+                url_imagen = "https://s3.amazonaws.com/wingsoft-trendsmaker-dev/fotos/PP+(4).png";
+                break;
+            case "Playa":
+                url_imagen = "https://s3.amazonaws.com/wingsoft-trendsmaker-dev/fotos/PP+(5).png";
+                break;
+            case "Nieve":
+                url_imagen = "https://s3.amazonaws.com/wingsoft-trendsmaker-dev/fotos/PP+(6).png";
+                break;
+
+            default:
+                url_imagen = "https://s3.amazonaws.com/wingsoft-trendsmaker-dev/fotos/PP+(7).png";
+                break;
+        }
+
+        return url_imagen;
+    }
+
+
+
+
 
     @Bean
     public RestTemplate restTemplate() {

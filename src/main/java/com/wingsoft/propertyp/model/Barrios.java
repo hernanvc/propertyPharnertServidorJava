@@ -20,6 +20,9 @@ public class Barrios {
     @Column(name = "imagen")
     private String imagen;
 
+    @Column(name = "ISSHOW")
+    private boolean isshow;
+
 
     public Barrios(){
 
@@ -48,4 +51,15 @@ public class Barrios {
     public void setImagen(String imagen) {
         this.imagen = imagen;
     }
+
+    public boolean isIsshow() {
+        return isshow;
+    }
+
+    public void setIsshow(boolean isshow) {
+        this.isshow = isshow;
+    }
+
+
 }
+

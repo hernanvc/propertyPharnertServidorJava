@@ -7,7 +7,7 @@ import javax.persistence.*;
 import java.util.List;
 
 @Entity
-@Table(name = "VENDEDOR")
+@Table(name = "VENDEDOR_DOS")
 public class Vendedor {
 
     @Id
@@ -25,6 +25,19 @@ public class Vendedor {
 
     @Column(name = "TELEFONO")
     private String telefono;
+
+
+    @Column(name = "imagen")
+    private String imagen;
+
+    @Column(name = "nombresucursal")
+    private String nombresucursal;
+
+    @Column(name = "CODIGO")
+    private Long codigo;
+
+
+
 
    // @JsonBackReference
     //
@@ -82,4 +95,32 @@ public class Vendedor {
     public void setPropiedades(List<Propiedad> propiedades) {
         this.propiedades = propiedades;
     }
+
+
+    public String getImagen() {
+        return imagen;
+    }
+
+    public void setImagen(String imagen) {
+        this.imagen = imagen;
+    }
+
+    public String getNombresucursal() {
+        return nombresucursal;
+    }
+
+    public void setNombresucursal(String nombresucursal) {
+        this.nombresucursal = nombresucursal;
+    }
+
+    public Long getCodigo() {
+        return codigo;
+    }
+
+    public void setCodigo(Long codigo) {
+        this.codigo = codigo;
+    }
+
+
+
 }

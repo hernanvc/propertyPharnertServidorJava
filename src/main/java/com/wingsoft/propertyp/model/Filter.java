@@ -1,5 +1,7 @@
 package com.wingsoft.propertyp.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import javax.persistence.*;
 
 
@@ -36,6 +38,11 @@ public class Filter {
 
     @Column(name = "region")
     long region ;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "USER_ID", nullable = false)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private User user;
 
 
 
@@ -118,4 +125,14 @@ public class Filter {
     public void setRegion(long region) {
         this.region = region;
     }
+
+    public User getUser() {
+        return user;
+    }
+
+    public void setUser(User user) {
+        this.user = user;
+    }
+
+
 }

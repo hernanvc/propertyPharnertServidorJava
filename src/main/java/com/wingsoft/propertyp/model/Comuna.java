@@ -68,4 +68,6 @@ public class Comuna {
     public void setRegion(Region region) {
         this.region = region;
     }
+
+
 }

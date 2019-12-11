@@ -78,4 +78,7 @@ public class Notificacion {
     public void setPropiedads(List<Propiedad> propiedads) {
         this.propiedads = propiedads;
     }
+
+
+
 }

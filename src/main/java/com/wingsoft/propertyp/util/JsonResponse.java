@@ -6,6 +6,7 @@ public class JsonResponse<T>  {
     String mensaje = "";
     boolean error = false;
     List<T> data  = null ;
+    long total_propiedades;
 
 
 
@@ -32,5 +33,11 @@ public class JsonResponse<T>  {
         this.data = data;
     }
 
+    public long getTotal_propiedades() {
+        return total_propiedades;
+    }
 
+    public void setTotal_propiedades(long total_propiedades) {
+        this.total_propiedades = total_propiedades;
+    }
 }
